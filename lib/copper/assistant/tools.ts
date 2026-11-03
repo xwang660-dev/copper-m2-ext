@@ -52,6 +52,16 @@ export type Availability =
   | { status: "not_a_color"; product: string; color: string; colors: string[] }
   | { status: "unavailable"; message: string };
 
+export type CheapestInStock =
+  | {
+      status: "ok";
+      product: string;
+      priceUsd: number;
+      colors: { color: string; stock: Exclude<Stock, "backordered"> }[];
+    }
+  | { status: "none_in_stock" }
+  | { status: "unavailable"; message: string };
+
 const PRODUCT_IDS = ["copper-home", "copper-notes"] as const;
 
 /** Rounds a dollar amount to whole cents. */
@@ -186,6 +196,36 @@ export async function checkAvailability(
   };
 }
 
+/**
+ * find_cheapest_in_stock: the cheapest product with at least one color on the
+ * shelf today. Price belongs to the product (every color costs the same), so
+ * "cheapest color" means the cheapest product that has a color in stock.
+ */
+export async function findCheapestInStock(): Promise<CheapestInStock> {
+  const rows = await readInventory();
+  if (!rows) {
+    return {
+      status: "unavailable",
+      message: "Stock can't be checked right now, so I can't say what's cheapest on the shelf.",
+    };
+  }
+
+  const cheapestFirst = [...getProducts()].sort((a, b) => a.priceUsd - b.priceUsd);
+  for (const product of cheapestFirst) {
+    // Back-ordered colors (0 units) don't count: the shopper can't buy them today.
+    const colors = product.colors.flatMap((color) => {
+      const row = rows.find((r) => r.product === product.name && r.color === color);
+      if (!row) return [];
+      const stock = stockLevel(row.units_in_stock);
+      return stock === "backordered" ? [] : [{ color, stock }];
+    });
+    if (colors.length > 0) {
+      return { status: "ok", product: product.name, priceUsd: product.priceUsd, colors };
+    }
+  }
+  return { status: "none_in_stock" };
+}
+
 export const copperTools = {
   get_products: tool({
     description:
@@ -210,5 +250,11 @@ export const copperTools = {
       "Checks today's stock of a Copper product, for every color or one color, and says when back-ordered colors are due.",
     inputSchema: checkAvailabilityInput,
     execute: async (input) => checkAvailability(input),
+  }),
+  find_cheapest_in_stock: tool({
+    description:
+      "Finds the cheapest Copper product that has at least one color in stock today, with its price and the colors available. Reads live stock.",
+    inputSchema: z.object({}),
+    execute: async () => findCheapestInStock(),
   }),
 };

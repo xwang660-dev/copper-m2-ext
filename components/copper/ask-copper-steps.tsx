@@ -178,6 +178,8 @@ function Sent({ step }: { step: ToolStep }) {
     return <p className="mt-1 text-sm">Nothing, it just asked for the price list.</p>;
   if (step.name === "get_products")
     return <p className="mt-1 text-sm">Nothing, it just asked what Copper sells.</p>;
+  if (step.name === "find_cheapest_in_stock")
+    return <p className="mt-1 text-sm">Nothing, it just asked for the cheapest option on the shelf.</p>;
   const input = asRecord(step.input);
   if (!input)
     return (
@@ -346,6 +348,32 @@ function Result({ step }: { step: ToolStep }) {
             </div>
           );
         })}
+      </div>
+    );
+  }
+
+  if (step.name === "find_cheapest_in_stock") {
+    if (output.status === "unavailable")
+      return <p className="mt-1 text-sm">{String(output.message)}</p>;
+    if (output.status === "none_in_stock")
+      return <p className="mt-1 text-sm">Nothing is in stock right now.</p>;
+    return (
+      <div className="mt-1 text-sm">
+        <div className="flex justify-between gap-4">
+          <span className="font-medium">{String(output.product)}</span>
+          <span>{formatUsd(Number(output.priceUsd))}</span>
+        </div>
+        <div className="mt-1 space-y-1">
+          {asArray(output.colors).map((item, i) => {
+            const row = asRecord(item);
+            return (
+              <div key={i} className="flex items-center justify-between gap-4">
+                <span>{String(row?.color)}</span>
+                <StockPill stock={String(row?.stock)} restockDate={null} />
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   }
